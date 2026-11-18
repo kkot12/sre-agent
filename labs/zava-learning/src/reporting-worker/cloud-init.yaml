@@ -26,7 +26,23 @@ write_files:
       # fails: we log a symptom-only failure plus the raw OS error for diagnosis.
       set -u
       EXPORT_DIR=/data/exports
+      # Minimum free space (MB) required on /data before an export is attempted.
+      MIN_FREE_MB=256
       mkdir -p "$EXPORT_DIR" 2>/dev/null
+      free_mb() { df --output=avail -m "$EXPORT_DIR" 2>/dev/null | tail -n 1 | tr -d ' '; }
+      # Free-space guard: /data/exports is owned by this worker. Retention below only covers
+      # grades-*.csv, so any other file left in the export directory (backlogs, temp dumps) can
+      # silently fill the 8 GB data disk. When free space drops below MIN_FREE_MB, prune those
+      # non-export files and log what was removed, so the export can proceed and the disk
+      # pressure is visible in Syslog before (not after) the export fails.
+      FREE=$(free_mb)
+      if [ "${FREE:-0}" -lt "$MIN_FREE_MB" ]; then
+        logger -t zava-export "disk pressure on /data: ${FREE:-0}MB free (< ${MIN_FREE_MB}MB); pruning non-export files in $EXPORT_DIR"
+        find "$EXPORT_DIR" -maxdepth 1 -type f ! -name 'grades-*.csv' -print -delete 2>/dev/null | while read -r f; do
+          logger -t zava-export "pruned non-export file: $(basename "$f")"
+        done
+        logger -t zava-export "disk pressure on /data after prune: $(free_mb)MB free"
+      fi
       TS=$(date +%Y%m%d-%H%M%S)
       OUT="$EXPORT_DIR/grades-$TS.csv"
       ERRFILE=$(mktemp)

@@ -152,6 +152,37 @@ resource gradeExportsFailing 'Microsoft.Insights/scheduledQueryRules@2023-03-15-
   }
 }
 
+// Leading indicator for the grade-export worker: its 8 GB /data disk is filling up. Fires before
+// the export writes start failing with "No space left on device".
+resource reportingDataDiskPressure 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = {
+  name: 'Zava-reporting-data-disk-pressure'
+  location: location
+  tags: tags
+  properties: {
+    description: 'Zava reporting: the grade-export worker data disk (/data) is running out of free space.'
+    severity: 2
+    enabled: true
+    evaluationFrequency: 'PT1M'
+    windowSize: 'PT5M'
+    scopes: [ logAnalyticsWorkspaceId ]
+    criteria: {
+      allOf: [
+        {
+          query: 'Perf\n| where ObjectName == "Logical Disk" and InstanceName == "/data" and CounterName == "% Used Space"\n| summarize AggregatedValue = max(CounterValue) by bin(TimeGenerated, 5m)'
+          metricMeasureColumn: 'AggregatedValue'
+          timeAggregation: 'Maximum'
+          operator: 'GreaterThan'
+          threshold: 85
+          failingPeriods: { numberOfEvaluationPeriods: 1, minFailingPeriodsToAlert: 1 }
+        }
+      ]
+    }
+    skipQueryValidation: true
+    autoMitigate: true
+    actions: { actionGroups: [ actionGroup.id ] }
+  }
+}
+
 output actionGroupId string = actionGroup.id
 output actionGroupName string = actionGroup.name
 output pagerDutyConfigured bool = hasPagerDuty
