@@ -119,6 +119,41 @@ resource quizApiLatencyElevated 'Microsoft.Insights/scheduledQueryRules@2023-03-
   }
 }
 
+// Quiz lanes (quiz-*) serve /quiz/* straight from PostgreSQL. A DB-side fault (e.g. a clamped role
+// CONNECTION LIMIT) surfaces only as /quiz/* 500s under concurrency while /health and the App Gateway
+// probe stay green, so none of the portal/assessment-api rules above fire. Alert on the lane logs.
+resource quizLaneErrorsElevated 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = {
+  name: 'Zava-quiz-lane-errors-elevated'
+  location: location
+  tags: tags
+  properties: {
+    description: 'Students see quiz errors on an isolated quiz lane.'
+    severity: 2
+    enabled: true
+    evaluationFrequency: 'PT5M'
+    windowSize: 'PT5M'
+    scopes: [ logAnalyticsWorkspaceId ]
+    criteria: {
+      allOf: [
+        {
+          query: 'ContainerAppConsoleLogs_CL\n| where ContainerAppName_s startswith "quiz-"\n| where Log_s has "path=/quiz/" and Log_s has "status=500"\n| summarize AggregatedValue = count() by ContainerAppName_s, bin(TimeGenerated, 5m)'
+          metricMeasureColumn: 'AggregatedValue'
+          timeAggregation: 'Total'
+          dimensions: [
+            { name: 'ContainerAppName_s', operator: 'Include', values: [ '*' ] }
+          ]
+          operator: 'GreaterThan'
+          threshold: 10
+          failingPeriods: { numberOfEvaluationPeriods: 1, minFailingPeriodsToAlert: 1 }
+        }
+      ]
+    }
+    skipQueryValidation: true
+    autoMitigate: false
+    actions: { actionGroups: [ actionGroup.id ] }
+  }
+}
+
 resource gradeExportsFailing 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = {
   name: 'Zava-grade-exports-failing'
   location: location
