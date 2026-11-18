@@ -15,7 +15,7 @@
     "injectLegacyDenyNsgLane": { "value": true },
     "seedAuditFindings": { "value": true },
     "appgwLaneProbePath": { "value": "/status-ping" },
-    "appLaneMinReplicas": { "value": 0 },
+    "appLaneMinReplicas": { "value": 1 },
     "appLaneMaxReplicas": { "value": 3 },
 
     "dbAdminPassword": { "value": "${POSTGRES_ADMIN_PASSWORD}" },
